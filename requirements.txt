@@ -1,3 +1,4 @@
+arrow
 boto>=2.34.0
 Sphinx>=1.2.3
 sphinx-rtd-theme>=0.1.6

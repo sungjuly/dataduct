@@ -5,12 +5,15 @@ import os
 
 from .etl_step import ETLStep
 from ..pipeline import ShellCommandActivity
+from ..pipeline import Ec2Resource
 from ..pipeline import S3Node
+from ..pipeline import Schedule
 from ..s3 import S3File
 from ..s3 import S3Directory
 from ..utils.helpers import exactly_one
 from ..utils.exceptions import ETLInputError
 from ..utils import constants as const
+from ..utils import helpers
 
 import logging
 logger = logging.getLogger(__name__)
@@ -46,6 +49,19 @@ class TransformStep(ETLStep):
             **kwargs(optional): Keyword arguments directly passed to base class
         """
         super(TransformStep, self).__init__(**kwargs)
+        if self.frequency and self.load_time:
+            load_hour, load_minutes = helpers.get_load_time(self.load_time)
+            self.schedule = self.create_pipeline_object(
+                object_class=Schedule,
+                frequency=self.frequency,
+                delay=self.delay,
+                load_hour=load_hour,
+                load_minutes=load_minutes,
+                timezone=self.timezone
+            )
+            self.set_ec2_resource()
+        self.set_input_nodes()
+
 
         if not exactly_one(command, script, script_directory):
             raise ETLInputError(

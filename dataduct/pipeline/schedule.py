@@ -1,9 +1,12 @@
 """
 Pipeline object class for the schedule
 """
-from datetime import datetime
 from datetime import timedelta
+<<<<<<< HEAD
 from pytimeparse import parse
+=======
+import arrow
+>>>>>>> WIP
 
 from ..config import Config
 from .pipeline_object import PipelineObject
@@ -32,6 +35,7 @@ class Schedule(PipelineObject):
                  time_delta=None,
                  load_hour=None,
                  load_minutes=None,
+                 timezone=None,
                  **kwargs):
         """Constructor for the Schedule class
 
@@ -44,7 +48,11 @@ class Schedule(PipelineObject):
             load_minutes(int): Minutes at which the pipeline should be run
             **kwargs(optional): Keyword arguments directly passed to base class
         """
-        current_time = datetime.utcnow()
+        date = arrow.utcnow()
+        if timezone:
+            date = date.to(timezone)
+
+        current_time = date.datetime
 
         # Set the defaults for load hour and minutes
         if load_minutes is None:
@@ -68,6 +76,7 @@ class Schedule(PipelineObject):
 
         # Calculate the start time of the pipeline
         start_time = current_time.replace(minute=load_minutes)
+        start_time = start_time.replace(second=0)
         if frequency == 'daily':
             start_time = start_time.replace(hour=load_hour)
 
@@ -79,10 +88,11 @@ class Schedule(PipelineObject):
 
         start_time += time_delta
 
+        utc_start_time = arrow.get(start_time, timezone=timezone).to('utc').format('YYYY-MM-DDTHH:mm:ss')
         super(Schedule, self).__init__(
             id=id,
             type='Schedule',
-            startDateTime=start_time.strftime('%Y-%m-%dT%H:%M:%S'),
+            startDateTime=utc_start_time,
             period=period,
             occurrences=occurrences
         )

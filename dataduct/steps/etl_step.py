@@ -3,6 +3,7 @@ Base class for an etl step
 """
 from ..config import Config
 from ..pipeline import Activity
+from ..pipeline import Ec2Resource
 from ..pipeline import CopyActivity
 from ..pipeline import S3Node
 from ..s3 import S3Path
@@ -33,7 +34,8 @@ class ETLStep(object):
     def __init__(self, id, s3_data_dir=None, s3_log_dir=None,
                  s3_source_dir=None, schedule=None, resource=None,
                  input_node=None, input_path=None, required_steps=None,
-                 max_retries=MAX_RETRIES):
+                 max_retries=MAX_RETRIES, frequency=None, load_time=None,
+                 delay=0, timezone=None):
         """Constructor for the ETLStep object
 
         Args:
@@ -50,8 +52,6 @@ class ETLStep(object):
         self.s3_log_dir = s3_log_dir
         self.s3_data_dir = s3_data_dir
         self.s3_source_dir = s3_source_dir
-        self.schedule = schedule
-        self.resource = resource
         self.max_retries = max_retries
         self._depends_on = list()
         self._output = None
@@ -59,6 +59,18 @@ class ETLStep(object):
         self._required_steps = list()
         self._required_activities = list()
         self._input_node = input_node
+        self._input_path = input_path
+        self.resource = resource
+        self.frequency = frequency
+        self.load_time = load_time
+        self.delay = delay
+        self.schedule = schedule
+        self.required_steps = required_steps
+        self.timezone = timezone
+
+    def set_input_nodes(self):
+        input_path = self._input_path
+        input_node = self._input_node
 
         if input_path is not None and input_node is not None:
             raise ETLInputError('Both input_path and input_node specified')
@@ -77,12 +89,20 @@ class ETLStep(object):
                                            isinstance(input_node, dict)):
             raise ETLInputError('Input node must be S3Node')
 
+
         if isinstance(input_node, dict):
             # Merge the s3 nodes if there are multiple inputs
-            self._input_node, self._depends_on = self.merge_s3_nodes(input_node)
+            for key, node in input_node.iteritems():
+                del node['schedule']
+                node['schedule'] = self.schedule
 
-        if required_steps:
-            self.add_required_steps(required_steps)
+            self._input_node, self._depends_on = self.merge_s3_nodes(input_node)
+        elif self._input_node is not None:
+            del self._input_node['schedule']
+            self._input_node['schedule'] = self.schedule
+
+        if self.required_steps:
+            self.add_required_steps(self.required_steps)
 
     def __str__(self):
         """Output the ETL step when typecasted to string"""
@@ -368,6 +388,10 @@ class ETLStep(object):
             'resource': None,
             'schedule': etl.schedule,
             'max_retries': etl.max_retries,
+            'frequency': etl.frequency,
+            'load_time': etl.load_time,
+            'delay': etl.delay,
+            'timezone': etl.timezone,
             'required_steps': list()
         }
         step_args.update(input_args)
@@ -460,3 +484,18 @@ class ETLStep(object):
         else:
             s3_path = None
         return s3_path
+
+    ec2_resources = dict()
+
+    def set_ec2_resource(self):
+        key = self.schedule['startDateTime']
+        if key in ETLStep.ec2_resources:
+            self.resource = ETLStep.ec2_resources[key]
+            return
+
+        self.resource = self.create_pipeline_object(
+            object_class=Ec2Resource,
+            s3_log_dir=self.s3_log_dir,
+            schedule=self.schedule
+        )
+        ETLStep.ec2_resources[key] = self.resource

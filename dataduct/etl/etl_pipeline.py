@@ -29,6 +29,7 @@ from ..s3 import S3LogPath
 from ..utils.exceptions import ETLInputError
 from ..utils.helpers import get_s3_base_path
 from ..utils import constants as const
+from ..utils import helpers
 
 import logging
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class ETLPipeline(object):
     def __init__(self, name, frequency='one-time', ec2_resource_config=None,
                  time_delta=None, emr_cluster_config=None, load_time=None,
                  topic_arn=None, max_retries=MAX_RETRIES,
-                 bootstrap=None, description=None):
+                 bootstrap=None, description=None, timezone=None, auto_input_nodes=True):
         """Constructor for the pipeline class
 
         Args:
@@ -65,15 +66,10 @@ class ETLPipeline(object):
             bootstrap(list of steps): bootstrap step definitions for resources
         """
 
-        if load_time and isinstance(load_time, str):
-            load_hour, load_min = [int(x) for x in load_time.split(':')]
-        elif load_time and isinstance(load_time, int):
-            load_hour, load_min = (load_time / 60, load_time % 60)
-        else:
-            load_hour, load_min = [None, None]
-
         if time_delta is None:
             time_delta = timedelta(seconds=0)
+
+        load_hour, load_min = helpers.get_load_time(load_time)
 
         # Input variables
         self._name = name if not NAME_PREFIX else NAME_PREFIX + '_' + name
@@ -84,6 +80,8 @@ class ETLPipeline(object):
         self.description = description
         self.max_retries = max_retries
         self.topic_arn = topic_arn
+        self._timezone = timezone
+        self._auto_input_nodes = auto_input_nodes
 
         if bootstrap is not None:
             self.bootstrap_definitions = bootstrap
@@ -169,6 +167,7 @@ class ETLPipeline(object):
             time_delta=self.time_delta,
             load_hour=self.load_hour,
             load_min=self.load_min,
+            timezone=self.timezone
         )
         if self.topic_arn is None and SNS_TOPIC_ARN_FAILURE is None:
             self.sns = None
@@ -261,6 +260,26 @@ class ETLPipeline(object):
             s3_dir(S3Directory): Directory where s3 src will be stored.
         """
         return self._s3_uri(const.SRC_STR)
+
+    @property
+    def frequency(self):
+        return self._frequency
+
+    @property
+    def load_time(self):
+        return self._load_time
+
+    @property
+    def delay(self):
+        return self._delay
+
+    @property
+    def timezone(self):
+        return self._timezone
+
+    @property
+    def auto_input_nodes(self):
+        return self._auto_input_nodes
 
     @property
     def ec2_resource(self):
@@ -421,7 +440,8 @@ class ETLPipeline(object):
             # Assume that the preceding step is the input if not specified
             if isinstance(input_node, S3Node) and \
                     'input_node' not in step_param and \
-                    'input_path' not in step_param:
+                    'input_path' not in step_param and \
+                    self.auto_input_nodes:
                 step_param['input_node'] = input_node
 
             try:

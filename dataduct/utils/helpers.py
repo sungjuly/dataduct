@@ -145,3 +145,14 @@ def get_s3_base_path():
     config = Config()
     return os.path.join('s3://', config.etl.get('S3_ETL_BUCKET', ''),
                         config.etl.get('S3_BASE_PATH', ''))
+
+
+def get_load_time(load_time):
+    if load_time and isinstance(load_time, str):
+        load_hour, load_min = [int(x) for x in load_time.split(':')]
+    elif load_time and isinstance(load_time, int):
+        load_hour, load_min = (load_time / 60, load_time % 60)
+    else:
+        load_hour, load_min = [None, None]
+
+    return load_hour, load_min

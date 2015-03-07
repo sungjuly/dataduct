@@ -17,7 +17,7 @@ class CreateAndLoadStep(TransformStep):
     """
 
     def __init__(self, id, table_definition, input_node=None,
-                 script_arguments=None, **kwargs):
+                 script_arguments=None, s3_input_paths=None, **kwargs):
         """Constructor for the CreateAndLoadStep class
 
         Args:
@@ -25,23 +25,25 @@ class CreateAndLoadStep(TransformStep):
             script_arguments(list of str): list of arguments to the script
             **kwargs(optional): Keyword arguments directly passed to base class
         """
-        with open(parse_path(table_definition)) as f:
-            table_def_string = f.read()
-
-        table_exists_script = Table(
-            SqlStatement(table_def_string)).exists_clone_script()
+        table_exists_script = []
+        if isinstance(table_definition, list):
+            for table_def in table_definition:
+                with open(parse_path(table_def)) as f:
+                    table_def_string = f.read()
+                    table_exists_script.append(Table(SqlStatement(table_def_string)).exists_clone_script().sql())
 
         if isinstance(input_node, dict):
             input_paths = [i.path().uri for i in input_node.values()]
-        else:
+        elif input_node is not None:
             input_paths = [input_node.path().uri]
-
+        elif s3_input_paths is not None:
+            input_paths = s3_input_paths
 
         if script_arguments is None:
             script_arguments = list()
 
         script_arguments.extend([
-            '--table_definition=%s' % table_exists_script.sql(),
+            '--table_definition=%s' % table_exists_script,
             '--s3_input_paths'] + input_paths)
 
         steps_path = os.path.abspath(os.path.dirname(__file__))
